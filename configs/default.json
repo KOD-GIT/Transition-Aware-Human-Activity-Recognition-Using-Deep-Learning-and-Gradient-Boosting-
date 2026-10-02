@@ -1,0 +1,7 @@
+{
+    "num_classes": 12,
+    "lgbm_params": {},
+    "cnn_params": {},
+    "mlp_params": {},
+    "deep_conv_lstm_params": {}
+}
