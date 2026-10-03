@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from numpy.linalg import norm
 from scipy import stats
+from scipy.fftpack import fft
 from scipy.signal import butter, filtfilt
 from statsmodels.distributions.empirical_distribution import ECDF
 from statsmodels.regression.linear_model import burg
@@ -136,6 +137,32 @@ class Preprocess:
         """
         return pd.DataFrame(norm(signal, ord=2, axis=1))
 
+    def obtain_spectrum(self, signal):
+        """Obtain spectrum using Fast Fourier Transform (FFT).
+        Args:
+            signal (pandas.DataFrame): Time domain signals
+        Returns:
+            amp (pandas.DataFrame): Amplitude spectrum
+            phase (pandas.DataFrame): Phase spectrum
+        """
+        N = len(signal)
+        columns = signal.columns
+
+        for col in columns:
+            signal[col] = signal[col] * np.hamming(N)  # hamming window
+
+        F = fft(signal, axis=0)  # Apply FFT
+        F = F[: N // 2, :]  # Remove the overlapping part
+
+        amp = np.abs(F)  # Obtain the amplitude spectrum
+        amp = amp / N * 2
+        amp[0] = amp[0] / 2
+        amp = pd.DataFrame(amp, columns=columns)  # Convert array to DataFrame
+        phase = np.angle(F)
+        phase = pd.DataFrame(phase, columns=columns)  # Convert array to DataFrame
+
+        return amp, phase
+
     def obtain_ecdf_percentile(self, signal, n_bins=10):
         """Obtain ECDF (empirical cumulative distribution function) percentile values.
         Args:
@@ -200,6 +227,31 @@ class Preprocess:
             zx = np.corrcoef(signal["z"], signal["x"])[0][1]
             correlation = np.hstack((xy, yz, zx))
         return correlation
+
+    def obtain_maxInds(self, signal) -> np.ndarray:
+        return signal.idxmax().values
+
+    def obtain_meanFreq(self, signal) -> np.ndarray:
+        meanFreq = np.array([])
+        for col in signal.columns:
+            val = np.mean(signal[col] * np.arange(len(signal)))
+            meanFreq = np.hstack((meanFreq, val))
+        return meanFreq
+
+    def obtain_skewness(self, signal) -> np.ndarray:
+        return signal.skew().values
+
+    def obtain_kurtosis(self, signal) -> np.ndarray:
+        return signal.kurt().values
+
+    def obtain_bandsEnergy(self, signal) -> np.ndarray:
+        bandsEnergy = np.array([])
+        bins = [0, 4, 8, 12, 16, 20, 24, 29, 34, 39, 44, 49, 54, 59, 64]
+        for i in range(len(bins) - 1):
+            df = signal.iloc[bins[i] : bins[i + 1]]
+            arr = self.obtain_energy(df)
+            bandsEnergy = np.hstack((bandsEnergy, arr))
+        return bandsEnergy
 
     def obtain_angle(self, v1, v2) -> np.ndarray:
         length = lambda v: math.sqrt(np.dot(v, v))
