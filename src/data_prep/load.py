@@ -66,10 +66,21 @@ def load_features() -> Tuple[
     idx_train = y_train[y_train[0].isin(class_ids_inc)].index
     X_train = X_train.iloc[idx_train].reset_index(drop=True)
     y_train = y_train.iloc[idx_train].reset_index(drop=True)
+    # subject_id_train = subject_id_train.iloc[idx_train].reset_index(drop=True)
 
     idx_test = y_test[y_test[0].isin(class_ids_inc)].index
     X_test = X_test.iloc[idx_test].reset_index(drop=True)
     y_test = y_test.iloc[idx_test].reset_index(drop=True)
+    # subject_id_test = subject_id_test.iloc[idx_test].reset_index(drop=True)
+
+    # Replace 6 to 0
+    rep_activity = label2act[6]
+    label2act[0] = rep_activity
+    label2act.pop(6)
+    act2label[rep_activity] = 0
+
+    y_train = y_train.replace(6, 0)
+    y_test = y_test.replace(6, 0)
 
     return X_train, X_test, y_train, y_test, label2act, act2label
 
@@ -93,6 +104,8 @@ def load_raw_data(
         act2label (Dict[str, int]): Dict of title_of_class to label_id
     """
     X_train, X_test = preprocess_raw_data(scaler=scaler)
+    # X_train = np.load(os.path.join(DATA_DIR, "my_dataset/Raw_X_train.npy"))
+    # X_test = np.load(os.path.join(DATA_DIR, "my_dataset/Raw_X_test.npy"))
     y_train = pd.read_table(os.path.join(DATA_DIR, "my_dataset/y_train.txt"), sep=" ", header=None)
     y_test = pd.read_table(os.path.join(DATA_DIR, "my_dataset/y_test.txt"), sep=" ", header=None)
 
@@ -104,5 +117,14 @@ def load_raw_data(
     for label, activity in activity_labels:
         label2act[int(label)] = activity
         act2label[activity] = int(label)
+
+    # Replace 6 to 0
+    rep_activity = label2act[6]
+    label2act[0] = rep_activity
+    label2act.pop(6)
+    act2label[rep_activity] = 0
+
+    y_train = y_train.replace(6, 0)
+    y_test = y_test.replace(6, 0)
 
     return X_train, X_test, y_train.values, y_test.values, label2act, act2label
