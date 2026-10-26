@@ -28,17 +28,27 @@ def train_and_predict(
     lgb_eval = lgb.Dataset(X_valid, y_valid, reference=lgb_train)
 
     callbacks = [log_evaluation(logger, period=verbose_eval)]
-
-    model = lgb.train(
-        lgbm_params,
-        lgb_train,
-        valid_sets=[lgb_train, lgb_eval],
-        verbose_eval=False,
-        num_boost_round=num_boost_round,
-        early_stopping_rounds=early_stopping_rounds,
-        callbacks=callbacks,
-        feval=feval,
-    )
+    if hasattr(lgb, "early_stopping") and early_stopping_rounds:
+        callbacks.append(lgb.early_stopping(early_stopping_rounds, verbose=False))
+        model = lgb.train(
+            lgbm_params,
+            lgb_train,
+            valid_sets=[lgb_train, lgb_eval],
+            num_boost_round=num_boost_round,
+            callbacks=callbacks,
+            feval=feval,
+        )
+    else:
+        model = lgb.train(
+            lgbm_params,
+            lgb_train,
+            valid_sets=[lgb_train, lgb_eval],
+            verbose_eval=False,
+            num_boost_round=num_boost_round,
+            early_stopping_rounds=early_stopping_rounds,
+            callbacks=callbacks,
+            feval=feval,
+        )
 
     logger.debug(f"{model.best_iteration=}")
     logger.debug(f"train best score={model.best_score['training'].items()}")

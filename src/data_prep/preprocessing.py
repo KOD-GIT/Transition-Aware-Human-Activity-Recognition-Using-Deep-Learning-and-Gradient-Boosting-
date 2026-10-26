@@ -189,6 +189,8 @@ class Preprocess:
         return signal.std().values
 
     def obtain_mad(self, signal) -> np.ndarray:
+        if hasattr(stats, "median_abs_deviation"):
+            return stats.median_abs_deviation(signal, axis=0)
         return stats.median_absolute_deviation(signal, axis=0)
 
     def obtain_max(self, signal) -> np.ndarray:

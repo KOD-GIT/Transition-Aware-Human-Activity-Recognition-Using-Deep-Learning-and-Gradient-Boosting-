@@ -11,9 +11,15 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
-from tensorflow import keras
+try:
+    from tensorflow import keras
+except ImportError:
+    keras = None
 
-shap.initjs()
+try:
+    shap.initjs()
+except Exception:
+    pass
 logger = getLogger(__name__)
 
 
@@ -99,12 +105,16 @@ def plot_shap_summary(
 ) -> None:
     shap_values_list = []
     for model in models:
-        explainer = shap.TreeExplainer(
-            model,
-            num_iteration=model.best_iteration,
-            feature_perturbation="tree_path_dependent",
-        )
+        try:
+            explainer = shap.TreeExplainer(
+                model,
+                feature_perturbation="tree_path_dependent",
+            )
+        except Exception:
+            explainer = shap.TreeExplainer(model)
         shap_value_oof = explainer.shap_values(X_train)
+        if isinstance(shap_value_oof, np.ndarray) and shap_value_oof.ndim == 3:
+            shap_value_oof = [shap_value_oof[:, :, i] for i in range(shap_value_oof.shape[2])]
         shap_values_list.append(shap_value_oof)
 
     shap_values = [np.zeros(shap_values_list[0][0].shape) for _ in range(len(class_names))]
@@ -158,7 +168,7 @@ def plot_confusion_matrix(
 
 
 def plot_model(model: Any, path: str) -> None:
-    if not os.path.isfile(path):
+    if not os.path.isfile(path) and keras is not None:
         keras.utils.plot_model(model, to_file=path, show_shapes=True)
 
 
