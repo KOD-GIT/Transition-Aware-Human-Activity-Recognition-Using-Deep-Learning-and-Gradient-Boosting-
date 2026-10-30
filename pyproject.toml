@@ -1,1 +1,6 @@
-# placeholder
+[tool.poetry]
+package-mode = false
+name = "har-project"
+version = "0.1.0"
+description = "Human Activity Recognition 1D-CNN"
+authors = ["Sharath P"]
