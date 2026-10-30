@@ -3,7 +3,7 @@
     "lgbm_params": {},
     "cnn_params": {
         "batch_size": 128,
-        "epochs": 10000,
+        "epochs": 150,
         "lr": 0.001,
         "verbose": 0
     },

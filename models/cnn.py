@@ -36,6 +36,7 @@ def train_and_predict(
     callbacks = create_callback(
         model=model,
         path_chpt=f"{LOG_DIR}/trained_model_fold{fold_id}.h5",
+        patience=20,
         verbose=10,
         epochs=cnn_params["epochs"],
     )
