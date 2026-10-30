@@ -1,97 +1,143 @@
-from logging import getLogger
-from typing import Any, Dict, List, Optional
+"""
+Custom Keras callbacks shared across MLP, CNN, and DeepConvLSTM pipelines.
 
-import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.metrics import f1_score
-from tensorflow.keras.callbacks import Callback, ModelCheckpoint, EarlyStopping
-from tensorflow.keras.models import Model
+Provides:
+  - CSVEpochLogger  — append per-epoch metrics to a CSV file
+  - TimingCallback  — measure wall-clock time per epoch
+  - get_default_callbacks() — convenience factory used by all run_*.py scripts
+"""
+from __future__ import annotations
 
-from src.utils import round
+import csv
+import time
+from pathlib import Path
 
-logger = getLogger(__name__)
-
-
-class F1Callback(Callback):
-    """Plot f1 value of every epoch"""
-
-    def __init__(
-        self,
-        model: Model,
-        path_f1_history: str,
-        X_tr: np.ndarray,
-        y_tr: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-    ) -> None:
-        self.model = model
-        self.path_f1_history = path_f1_history
-        self.X_tr = X_tr
-        self.y_tr = y_tr
-        self.X_val = X_val
-        self.y_val = y_val
-        self.tr_fscores: List[float] = []  # train f1 of every epoch
-        self.val_fscores: List[float] = []  # valid f1 of every epoch
-
-    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, float]] = None) -> None:
-        tr_pred = self.model.predict(self.X_tr)
-        tr_macro_f1 = f1_score(self.y_tr.argmax(axis=1), tr_pred.argmax(axis=1), average="macro")
-        self.tr_fscores.append(tr_macro_f1)
-        val_pred = self.model.predict(self.X_val)
-        val_macro_f1 = f1_score(self.y_val.argmax(axis=1), val_pred.argmax(axis=1), average="macro")
-        self.val_fscores.append(val_macro_f1)
-
-        fig = plt.figure(figsize=(5, 4))
-        ax = fig.add_subplot(111)
-        ax.plot(self.tr_fscores, label="f1_score for training")
-        ax.plot(self.val_fscores, label="f1_score for validation")
-        ax.set_title("model f1_score")
-        ax.set_xlabel("epoch")
-        ax.set_ylabel("f1_score")
-        ax.legend(loc="upper right")
-        fig.savefig(self.path_f1_history)
-        plt.close()
+from tensorflow import keras
 
 
-class PeriodicLogger(Callback):
-    """Logging history every n epochs"""
+class CSVEpochLogger(keras.callbacks.Callback):
+    """Append per-epoch metrics to a CSV file.
 
-    def __init__(
-        self, metric: str = "accuracy", verbose: int = 1, epochs: Optional[int] = None
-    ) -> None:
-        self.metric = metric
-        self.verbose = verbose
-        self.epochs = epochs
+    The header row is written on the first epoch; subsequent epochs are
+    appended without re-opening the file.
 
-    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, float]] = None) -> None:
-        epoch += 1
-        if epoch % self.verbose == 0:
-            msg = " - ".join(
-                [
-                    f"Epoch {epoch}/{self.epochs}",
-                    f"loss: {round(logs['loss'], 0.0001)}",
-                    f"{self.metric}: {round(logs[self.metric], 0.0001)}",
-                    f"val_loss: {round(logs['val_loss'], 0.0001)}",
-                    f"val_{self.metric}: {round(logs[f'val_{self.metric}'], 0.0001)}",
-                ]
-            )
-            logger.debug(msg)
-
-
-def create_callback(
-    model: Model, path_chpt: str, patience: int = 30, metric: str = "accuracy", verbose: int = 10, epochs: Optional[int] = None
-) -> List[Any]:
-    """callback settinngs
-    Args:
-        model (Model)
-        path_chpt (str): path to save checkpoint
-    Returns:
-        callbacks (List[Any]): List of Callback
+    Parameters
+    ----------
+    filepath:
+        Destination CSV file.  Parent directories are created automatically.
+    separator:
+        Column delimiter (default ``,``).
     """
-    callbacks = []
-    callbacks.append(
-        EarlyStopping(monitor="val_loss", min_delta=0, patience=patience, verbose=1, mode="min")
-    )
-    callbacks.append(ModelCheckpoint(filepath=path_chpt, save_best_only=True))
-    callbacks.append(PeriodicLogger(metric=metric, verbose=verbose, epochs=epochs))
+
+    def __init__(self, filepath: str | Path, separator: str = ",") -> None:
+        super().__init__()
+        self.filepath  = Path(filepath)
+        self.separator = separator
+        self._file:   object | None = None
+        self._writer: object | None = None
+
+    def on_train_begin(self, logs=None) -> None:
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        self._file   = open(self.filepath, "w", newline="", encoding="utf-8")
+        self._writer = None  # header deferred until we know the metric names
+
+    def on_epoch_end(self, epoch: int, logs=None) -> None:
+        logs = logs or {}
+        if self._writer is None:
+            fieldnames = ["epoch"] + sorted(logs.keys())
+            self._writer = csv.DictWriter(
+                self._file, fieldnames=fieldnames, delimiter=self.separator
+            )
+            self._writer.writeheader()
+
+        row = {
+            "epoch": epoch + 1,
+            **{k: logs.get(k, "") for k in self._writer.fieldnames[1:]},
+        }
+        self._writer.writerow(row)
+        self._file.flush()
+
+    def on_train_end(self, logs=None) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file   = None
+            self._writer = None
+
+
+class TimingCallback(keras.callbacks.Callback):
+    """Record wall-clock time for each training epoch.
+
+    After training, ``callback.epoch_times`` contains a list of elapsed
+    seconds (one entry per epoch).  The elapsed time is also injected into
+    the ``logs`` dict as ``epoch_time_s`` so CSV loggers pick it up.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.epoch_times: list[float] = []
+        self._t0: float = 0.0
+
+    def on_epoch_begin(self, epoch: int, logs=None) -> None:
+        self._t0 = time.perf_counter()
+
+    def on_epoch_end(self, epoch: int, logs=None) -> None:
+        elapsed = time.perf_counter() - self._t0
+        self.epoch_times.append(elapsed)
+        if logs is not None:
+            logs["epoch_time_s"] = round(elapsed, 3)
+
+
+def get_default_callbacks(
+    log_csv_path: str | Path | None = None,
+    early_stopping_patience: int = 15,
+    reduce_lr_patience: int = 7,
+    model_checkpoint_path: str | Path | None = None,
+) -> list[keras.callbacks.Callback]:
+    """Return a standard callback stack for HAPT model training.
+
+    Parameters
+    ----------
+    log_csv_path:
+        If provided, per-epoch metrics are streamed to this CSV file.
+    early_stopping_patience:
+        Epochs without improvement in ``val_loss`` before stopping.
+    reduce_lr_patience:
+        Epochs without improvement before halving the learning rate.
+    model_checkpoint_path:
+        If provided, best weights (by ``val_accuracy``) are saved here.
+
+    Returns
+    -------
+    list[keras.callbacks.Callback]
+    """
+    callbacks: list[keras.callbacks.Callback] = [
+        keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=early_stopping_patience,
+            restore_best_weights=True,
+            verbose=1,
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=reduce_lr_patience,
+            min_lr=1e-6,
+            verbose=1,
+        ),
+        TimingCallback(),
+    ]
+
+    if log_csv_path is not None:
+        callbacks.append(CSVEpochLogger(log_csv_path))
+
+    if model_checkpoint_path is not None:
+        callbacks.append(
+            keras.callbacks.ModelCheckpoint(
+                filepath=str(model_checkpoint_path),
+                monitor="val_accuracy",
+                save_best_only=True,
+                verbose=1,
+            )
+        )
+
     return callbacks
