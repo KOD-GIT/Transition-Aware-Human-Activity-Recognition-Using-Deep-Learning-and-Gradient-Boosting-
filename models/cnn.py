@@ -6,15 +6,16 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Activation, Dropout, Flatten, Conv2D
+from tensorflow.keras.layers import (
+    Dense, Activation, Dropout, Conv1D, 
+    BatchNormalization, MaxPooling1D, GlobalAveragePooling1D
+)
 from tensorflow.keras import optimizers
 from tensorflow.keras import backend as K
 
-from src.utils import plot_learning_history, plot_model
-from src.keras_callback import create_callback
+from src.keras_callback import get_default_callbacks
 
 tf.random.set_seed(0)
-
 
 def train_and_predict(
     LOG_DIR: str,
@@ -25,20 +26,17 @@ def train_and_predict(
     y_train: np.ndarray,
     y_valid: np.ndarray,
     cnn_params: Dict[str, Any],
-    class_weights: Dict[int, float] = None  # ADDED: Accepts class weights
+    class_weights: Dict[int, float] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Model]:
     
-    model = build_baseline(
+    # CHANGED: Call the new 1D-CNN builder
+    model = build_1d_cnn(
         input_shape=X_train.shape[1:], output_dim=y_train.shape[1], lr=cnn_params["lr"]
     )
-    plot_model(model, path=f"{LOG_DIR}/model.png")
 
-    callbacks = create_callback(
-        model=model,
-        path_chpt=f"{LOG_DIR}/trained_model_fold{fold_id}.h5",
-        patience=20,
-        verbose=10,
-        epochs=cnn_params["epochs"],
+    callbacks = get_default_callbacks(
+        early_stopping_patience=20,
+        model_checkpoint_path=f"{LOG_DIR}/trained_model_fold{fold_id}.h5"
     )
 
     fit = model.fit(
@@ -49,10 +47,9 @@ def train_and_predict(
         verbose=cnn_params["verbose"],
         validation_data=(X_valid, y_valid),
         callbacks=callbacks,
-        class_weight=class_weights  # ADDED: Forces the CNN to prioritize rare transitions
+        class_weight=class_weights 
     )
 
-    plot_learning_history(fit=fit, path=f"{LOG_DIR}/history_fold{fold_id}.png")
     model = keras.models.load_model(f"{LOG_DIR}/trained_model_fold{fold_id}.h5")
 
     pred_train = model.predict(X_train)
@@ -63,31 +60,41 @@ def train_and_predict(
     return pred_train, pred_valid, pred_test, model
 
 
-def build_baseline(
-    input_shape: Tuple[int, int, int] = (128, 6, 1), 
-    output_dim: int = 12, # CHANGED: Default is now 12
+def build_1d_cnn(
+    input_shape: Tuple[int, int] = (128, 6), # CHANGED: 1D-CNN uses (timesteps, channels)
+    output_dim: int = 12, 
     lr: float = 0.001
 ) -> Model:
     model = Sequential()
-    model.add(Conv2D(64, kernel_size=(5, 1), input_shape=input_shape))
+    
+    # Block 1
+    model.add(Conv1D(64, kernel_size=5, padding='same', input_shape=input_shape))
+    model.add(BatchNormalization())
     model.add(Activation("relu"))
-    model.add(Conv2D(64, kernel_size=(5, 1)))
+    model.add(MaxPooling1D(pool_size=2))
+    
+    # Block 2
+    model.add(Conv1D(128, kernel_size=5, padding='same'))
+    model.add(BatchNormalization())
     model.add(Activation("relu"))
-    model.add(Conv2D(64, kernel_size=(5, 1)))
+    model.add(MaxPooling1D(pool_size=2))
+    
+    # Block 3
+    model.add(Conv1D(256, kernel_size=3, padding='same'))
+    model.add(BatchNormalization())
     model.add(Activation("relu"))
-    model.add(Conv2D(64, kernel_size=(5, 1)))
-    model.add(Activation("relu"))
-    model.add(Flatten())
+    model.add(GlobalAveragePooling1D())
+    
+    # Classification Head
+    model.add(Dropout(0.4, seed=0))
     model.add(Dense(128))
     model.add(Activation("relu"))
-    model.add(Dropout(0.5, seed=0))
-    model.add(Dense(128))
-    model.add(Activation("relu"))
-    model.add(Dropout(0.5, seed=1))
     model.add(Dense(output_dim))
     model.add(Activation("softmax"))
+    
     model.compile(
-        loss="categorical_crossentropy", optimizer=optimizers.Adam(lr=lr), metrics=["accuracy"]
+        loss="categorical_crossentropy", 
+        optimizer=optimizers.Adam(learning_rate=lr), 
+        metrics=["accuracy"]
     )
     return model
-
