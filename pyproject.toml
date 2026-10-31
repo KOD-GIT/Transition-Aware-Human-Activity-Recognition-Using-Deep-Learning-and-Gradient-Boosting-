@@ -4,3 +4,11 @@ name = "har-project"
 version = "0.1.0"
 description = "Human Activity Recognition 1D-CNN"
 authors = ["Sharath P"]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+numpy = "^2.5.4"
+pandas = "^3.1.0"
+scikit-learn = "^1.9.1"
+tensorflow = "^2.21.0"
+matplotlib = "^3.11.2"
