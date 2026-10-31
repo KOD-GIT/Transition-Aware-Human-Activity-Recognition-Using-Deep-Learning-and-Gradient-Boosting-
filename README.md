@@ -112,6 +112,13 @@ poetry run python run_deep_conv_lstm.py
 poetry run python run_mlp.py
 ```
 
+For the DeepConvLSTM runner, install its runtime dependencies with
+`python -m pip install -r requirements-deepconvlstm.txt`, then run
+`python run_deep_conv_lstm.py --data-dir data/hapt_data_set`. It uses the
+repository's fixed 21-subject training and 9-subject test split, five
+subject-grouped validation folds, and writes out-of-fold and held-out test
+metrics to `logs/deep_conv_lstm_results.json`.
+
 ---
 
 ## 🧠 Methods
@@ -123,7 +130,13 @@ Transition-aware handcrafted features (statistical, FFT, signal processing) fed 
 Sliding-window CNN processing raw sensor signals across all 12 activity classes including transitions.
 
 ### Deep Convolutional LSTM (DeepConvLSTM)
-Extends the CNN with LSTM layers to capture temporal dependencies — especially useful for detecting short-duration transition events.
+Four unpooled 1D convolutions (64 filters, kernel size 5) feed two 128-unit
+LSTM layers, followed by dropout, a 128-unit dense layer, and a 12-class
+classifier. Inputs are 128 × 6 windows with 50% overlap. The runner applies
+training-fold-only channel normalization, inverse-frequency class weights,
+Adam at 0.001, gradient clipping at 1.0, and early stopping (patience 20).
+It reports macro metrics and per-class transition recall/F1 as well as
+subject-independent out-of-fold and held-out test results.
 
 ### Multi-Layer Perceptron (MLP)
 Feedforward network — input strategy (engineered features vs raw windows) to be determined and aligned with the report.
