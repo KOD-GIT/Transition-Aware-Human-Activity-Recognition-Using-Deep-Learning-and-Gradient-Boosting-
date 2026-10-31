@@ -3,6 +3,7 @@ import json
 from logging import basicConfig, getLogger, StreamHandler, DEBUG, WARNING
 import os
 import sys
+import glob
 from typing import Any, Dict, List
 
 import numpy as np
@@ -19,9 +20,8 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.class_weight import compute_class_weight
 from tensorflow import keras
 
-from src.data_prep.load import load_raw_data
-from src.utils import check_class_balance, round
-from src.utils import plot_feature_importance, plot_shap_summary, plot_confusion_matrix
+from src.data_prep.load import load_hapt, ACTIVITY_LABELS
+from src.utils import plot_confusion_matrix
 from models.cnn import train_and_predict
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))  # Path to current directory
@@ -42,7 +42,55 @@ logger = getLogger(__name__)
 logger.setLevel(DEBUG)
 logger.debug(f"{LOG_DIR}/{EXEC_TIME}.log")
 
-X_train, X_test, y_train, y_test, label2act, act2label = load_raw_data()
+# --- NEW CUSTOM RAW DATA LOADER ---
+def load_hapt_raw_windows(data_dir):
+    raw_dir = os.path.join(data_dir, "RawData")
+    labels = pd.read_csv(os.path.join(raw_dir, "labels.txt"), sep='\s+', header=None, names=["exp", "user", "act", "start", "end"])
+    
+    # Subject-independent split matching the project report
+    train_users = [1, 3, 5, 6, 7, 8, 11, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 30]
+
+    X_tr, y_tr, X_te, y_te = [], [], [], []
+
+    for exp in range(1, 62):
+        acc_matches = glob.glob(os.path.join(raw_dir, f"acc_exp{exp:02d}_*.txt"))
+        gyro_matches = glob.glob(os.path.join(raw_dir, f"gyro_exp{exp:02d}_*.txt"))
+        if not acc_matches or not gyro_matches: continue
+
+        user_id = int(acc_matches[0].split("user")[1][:2])
+        acc_data = pd.read_csv(acc_matches[0], sep='\s+', header=None).values
+        gyro_data = pd.read_csv(gyro_matches[0], sep='\s+', header=None).values
+        combined = np.hstack((acc_data, gyro_data)) # Keep only the 6 required channels
+
+        exp_labels = labels[labels['exp'] == exp]
+        for _, row in exp_labels.iterrows():
+            segment = combined[row['start'] : row['end'] + 1]
+            act_idx = row['act'] - 1 # Shift 1-12 to 0-11 for Keras
+
+            # 128 window size, 64 step size (50% overlap)
+            for i in range(0, len(segment) - 128 + 1, 64):
+                if user_id in train_users:
+                    X_tr.append(segment[i : i + 128])
+                    y_tr.append(act_idx)
+                else:
+                    X_te.append(segment[i : i + 128])
+                    y_te.append(act_idx)
+
+    # Channel-wise normalization based on training set statistics
+    X_train_arr = np.array(X_tr)
+    X_test_arr = np.array(X_te)
+    means = X_train_arr.mean(axis=(0, 1))
+    stds = X_train_arr.std(axis=(0, 1))
+
+    return (X_train_arr - means) / stds, np.array(y_tr), (X_test_arr - means) / stds, np.array(y_te)
+
+# 1. Load, window, and normalize the 3D raw signals directly from RawData
+data_path = os.path.join(CUR_DIR, "data", "hapt_data_set")
+X_train, y_train, X_test, y_test = load_hapt_raw_windows(data_path)
+
+# 2. Reconstruct the 0-indexed label mappings that the rest of the script relies on
+label2act = {k-1: v for k, v in ACTIVITY_LABELS.items()}
+act2label = {v: k-1 for k, v in ACTIVITY_LABELS.items()}
 
 # ADDED: Calculate the specific class weights to combat the severe class imbalance
 classes = np.unique(y_train.flatten())
@@ -51,8 +99,6 @@ class_weights_dict = dict(zip(classes, weights))
 
 logger.debug(f"{X_train.shape=} {X_test.shape=}")
 logger.debug(f"{y_train.shape=} {y_test.shape=}")
-
-check_class_balance(y_train.flatten(), y_test.flatten(), label2act=label2act)
 
 # Split data by preserving the percentage of samples for each class.
 n_splits = 5
@@ -123,7 +169,7 @@ for mode in ["train", "valid", "test"]:
     for class_id in range(12):
         mean_class_f1 = np.mean([class_f1_mat[i][class_id] for i in range(n_splits)])
         class_f1_result[label2act[class_id]] = mean_class_f1
-    logger.debug(f"per-class f1={round(class_f1_result)}")
+    logger.debug(f"per-class f1={class_f1_result}")
 
 # Output Final Scores Averaged over Folds
 logger.debug("---Final Test Scores Averaged over Folds---")
@@ -136,10 +182,13 @@ logger.debug(f"f1={f1_score(y_test, test_pred, average='macro')}")
 logger.debug(f"per-class f1={f1_score(y_test, test_pred, average=None)}")
 
 # Plot comfusion matrix
+# Plot confusion matrix
 plot_confusion_matrix(
-    cms=scores["cm"],
-    labels=[label2act[i] for i in range(12)],
-    path=f"{LOG_DIR}/comfusion_matrix.png",
+    y_true=y_test,
+    y_pred=test_pred,
+    num_classes=12,
+    save_path=f"{LOG_DIR}/confusion_matrix.png",
+    show=False
 )
 
 np.save(f"{LOG_DIR}/valid_oof.npy", valid_preds)
