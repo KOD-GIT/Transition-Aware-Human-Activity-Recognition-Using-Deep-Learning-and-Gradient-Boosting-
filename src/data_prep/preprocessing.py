@@ -22,8 +22,6 @@ from scipy import stats
 from scipy.fftpack import fft
 from scipy.signal import butter, filtfilt
 from sklearn.preprocessing import StandardScaler
-from statsmodels.distributions.empirical_distribution import ECDF
-from statsmodels.regression.linear_model import burg
 
 logger = getLogger(__name__)
 
@@ -274,6 +272,8 @@ class Preprocess:
         Returns:
             features (array): ECDF percentile values.
         """
+        from statsmodels.distributions.empirical_distribution import ECDF
+
         idx = np.linspace(0, signal.shape[0] - 1, n_bins)  # Take n_bins linspace percentile.
         idx = [int(Decimal(str(ix)).quantize(Decimal("0"), rounding=ROUND_HALF_UP)) for ix in idx]
         features = np.array([])
@@ -317,6 +317,8 @@ class Preprocess:
         return stats.entropy(signal)
 
     def obtain_arCoeff(self, signal) -> np.ndarray:
+        from statsmodels.regression.linear_model import burg
+
         arCoeff = np.array([])
         for col in signal.columns:
             val, _ = burg(signal[col], order=4)

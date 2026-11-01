@@ -20,7 +20,12 @@
         "nthread": -1,
         "seed": 42
     },
-    "cnn_params": {},
+    "cnn_params": {
+        "batch_size": 128,
+        "epochs": 150,
+        "lr": 0.001,
+        "verbose": 0
+    },
     "mlp_params": {},
     "deep_conv_lstm_params": {}
 }

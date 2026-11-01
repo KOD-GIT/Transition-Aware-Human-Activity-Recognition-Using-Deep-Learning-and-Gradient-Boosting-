@@ -19,8 +19,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import shap
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     classification_report,
@@ -31,11 +29,6 @@ from sklearn.metrics import (
 )
 
 from src.data_prep.load import ACTIVITY_LABELS, TRANSITION_CLASSES
-
-try:
-    shap.initjs()
-except Exception:
-    pass
 
 logger = getLogger(__name__)
 
@@ -240,6 +233,8 @@ def plot_feature_importance(
     Args:
         importance_type: chosen from "gain" or "split"
     """
+    import seaborn as sns
+
     importances = np.zeros((len(models), num_features))
     for i, model in enumerate(models):
         importances[i] = model.feature_importance(importance_type=importance_type)
@@ -263,6 +258,8 @@ def plot_shap_summary(
     path: str = "shap_summary_plot.png",
     max_display: Optional[int] = None,
 ) -> None:
+    import shap
+
     shap_values_list = []
     for model in models:
         try:
@@ -303,6 +300,8 @@ def plot_cv_confusion_matrices(
     path: str = "confusion_matrix.png",
 ) -> None:
     """Plot LightGBM train/valid/test confusion matrices averaged over CV folds."""
+    import seaborn as sns
+
     cms = [np.mean(cms[mode], axis=0) for mode in ["train", "valid", "test"]]
 
     fig, ax = plt.subplots(ncols=3, figsize=(20, 7))
