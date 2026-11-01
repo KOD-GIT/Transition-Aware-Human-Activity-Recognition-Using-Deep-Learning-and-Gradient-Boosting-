@@ -41,7 +41,8 @@ This project implements and compares four approaches for classifying human activ
 │   └── default.json              # Hyperparameters for all models (12-class output)
 ├── data/
 │   └── hapt_data_set/            # Raw HAPT sensor dataset (place dataset here)
-├── logs/                         # Training logs
+├── logs/
+│   └── logger_lgbm.py            # LightGBM training callback logger
 ├── models/
 │   ├── cnn.py                    # 1D-CNN architecture (12-class)
 │   ├── deep_conv_lstm.py         # DeepConvLSTM architecture (12-class)
@@ -124,7 +125,7 @@ metrics to `logs/deep_conv_lstm_results.json`.
 ## 🧠 Methods
 
 ### Feature Engineering + LightGBM
-Transition-aware handcrafted features (statistical, FFT, signal processing) fed into a LightGBM classifier with class-balancing for the underrepresented transition classes.
+Raw accelerometer and gyroscope signals are transformed into 621 handcrafted features (statistics, FFT, jerk, AR coefficients, ECDF). Class imbalance is handled with a subject-independent split and 5-fold `StratifiedKFold`. The current LightGBM runner classifies the **6 basic activity classes**; MLP and DeepConvLSTM remain 12-class.
 
 ### 1D Convolutional Neural Network (CNN)
 Sliding-window CNN processing raw sensor signals across all 12 activity classes including transitions.
@@ -148,7 +149,7 @@ Feedforward network — input strategy (engineered features vs raw windows) to b
 - [ ] `configs/default.json` — update `num_class` from 6 → 12
 - [ ] `src/data_prep/load.py` — include all 6 postural transition classes
 - [ ] All runner scripts — update prediction arrays and confusion matrices for 12 classes
-- [ ] `logs/logger_lgbm.py` — currently missing, must be created before LightGBM runs
+- [x] `logs/logger_lgbm.py` — restored for the LightGBM runner
 - [ ] MLP strategy — decide engineered features vs raw windows and align with report
 - [ ] Add transition-class precision, recall, and F1 to evaluation metrics
 - [ ] Add `notebooks/` EDA notebook for raw signal visualization
